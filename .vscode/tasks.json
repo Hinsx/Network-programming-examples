@@ -1,0 +1,30 @@
+{
+    "tasks": [
+        {
+            "label": "Build",
+            "dependsOrder": "sequence",
+            "dependsOn":["cmake","make",]
+        },
+        {
+            "type": "shell",
+            "label": "cmake",
+            "command": "cmake",
+            "args": [
+                ".."
+            ],
+            "options": {
+                "cwd": "${fileDirname}/build"
+            },
+        },
+        {
+            "type": "shell",
+            "label": "make",
+            "command": "make",
+            "args": [],
+            "options": {
+                "cwd": "${fileDirname}/build"
+            },
+        }
+    ],
+    "version": "2.0.0"
+}

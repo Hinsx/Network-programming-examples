@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gdb_test", 
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${fileDirname}/build/${fileBasenameNoExtension}", // 可执行文件
+            "args": ["localhost","1024"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}", // program 的上一级目录
+            "environment": [],
+            "externalConsole": false, 
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "preLaunchTask":  "Build" 
+        }
+    ]
+  }
