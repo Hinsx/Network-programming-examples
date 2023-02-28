@@ -30,8 +30,8 @@ int main(int argc,char** argv){
     else{
         const char* problem="1 + 1 = ?";
         cout<<"Trying to send data...\n";
-        send(sockfd,problem,strlen(problem),0);
-        cout<<"Send "<<strlen(problem)<<" bytes.\n";
+        int n=send(sockfd,problem,strlen(problem),0);
+        cout<<"Send "<<n<<" bytes.\n";
         char ans[255]{0};
         ssize_t ret=0;
         cout<<"Trying to receive data...\n";
