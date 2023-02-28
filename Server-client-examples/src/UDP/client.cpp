@@ -38,8 +38,15 @@ int main(int argc,char** argv){
         char ans[255]{0};
         ssize_t ret=0;
         cout<<"Trying to receive data...\n";
-        recv(sockfd,ans,sizeof(ans)-1,0);
-        
+        sockaddr_in fromAddress;
+        socklen_t fromAddressLength = sizeof(fromAddress);
+        //使用recvfrom而不是recv，会接受任何udp数据报，并将地址解析到后两个参数
+        //recv(sockfd,ans,sizeof(ans)-1,0);
+        recvfrom(sockfd,ans,sizeof(ans)-1,0,(sockaddr*)&fromAddress,&fromAddressLength);
+        // 打印连接地址
+        char *fromAddressString = inet_ntoa(fromAddress.sin_addr);
+        int fromAddressPort = ntohs(fromAddress.sin_port);
+        cout << "Received UDP datagram from [" << fromAddressString << ":" << fromAddressPort << "]\n";       
         if(atoi((const char*)ans)==2){
             cout<<"Success.\n";
         }
