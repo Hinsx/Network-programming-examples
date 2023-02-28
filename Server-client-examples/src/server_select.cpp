@@ -172,8 +172,12 @@ int main(int argc, char **argv)
                     memset(buf, 0, sizeof(buf));
                     ret = recv(fd, buf, sizeof(buf) - 1, 0);
                     cout << "Received " << ret << " bytes.\n";
-                    if (ret == 0)
+                    if (ret <= 0)
                     {
+                        if (ret == -1)
+                        {
+                            cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                        }
                         cout << "Close connection.\n";
                         close(fd);
                         channels.erase(fd);
@@ -191,9 +195,13 @@ int main(int argc, char **argv)
                 char message[128]{0};
                 snprintf(message, sizeof(message), "%d", channels[fd].ans);
                 size_t messageLength = strlen(message);
-                int len = 0;
-                while ((len += send(fd, message + len, messageLength - len, 0)) < messageLength)
+                int ret = send(fd, message, messageLength, 0);
+                if (ret < 0)
                 {
+                    cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                    close(fd);
+                    channels.erase(fd);
+                    continue;
                 }
 
                 channels[fd].write = false;
