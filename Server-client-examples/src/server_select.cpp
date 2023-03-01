@@ -58,9 +58,9 @@ struct Channel
     bool read;
     bool write;
     int ans = -1;
-    Channel(int sock=0, bool a=0, bool b=0) : fd(sock), read(a), write(b) {}
+    Channel(int sock = 0, bool a = 0, bool b = 0) : fd(sock), read(a), write(b) {}
 };
-// 维护建立的连接,便于增添和删除
+// 维护建立的tcp连接,便于增添和删除
 map<int, Channel> channels;
 // 保存发生事件的fd
 vector<Channel> eventChannels;
@@ -71,11 +71,13 @@ int main(int argc, char **argv)
     {
         cout << "usage:" << basename(argv[0]) << " ip_address pot_number.\n";
     }
-    int listenfd = socket(PF_INET, SOCK_STREAM, 0);
-    assert(listenfd >= 0);
-    // 设置地址可重用便于调试
+    int tcpListenfd = socket(PF_INET, SOCK_STREAM, 0);
+    assert(tcpListenfd >= 0);
+    int udpListenfd = socket(PF_INET, SOCK_DGRAM, 0);
+    assert(udpListenfd >= 0);
+    // tcp设置地址可重用便于调试
     int reuse = 1;
-    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    setsockopt(tcpListenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
     const char *ip = argv[1];
     int port = atoi(argv[2]);
@@ -85,17 +87,24 @@ int main(int argc, char **argv)
     serverAddress.sin_port = htons(port);
     inet_pton(AF_INET, ip, &serverAddress.sin_addr);
 
-    int ret = bind(listenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
+    int ret = bind(tcpListenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
     if (ret < 0)
     {
         cout << "Error " << errno << ": " << strerror(errno) << ".\n";
     }
     assert(ret != -1);
-
-    ret = listen(listenfd, 5);
+    ret = bind(udpListenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
+    if (ret < 0)
+    {
+        cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+    }
+    assert(ret != -1);
+    // udp不需要listen
+    ret = listen(tcpListenfd, 5);
     assert(ret != -1);
 
-    channels[listenfd] = {listenfd, true, false};
+    channels[tcpListenfd] = {tcpListenfd, true, false};
+    channels[udpListenfd] = {udpListenfd, true, false};
 
     fd_set read_fds;
     fd_set write_fds;
@@ -145,7 +154,7 @@ int main(int argc, char **argv)
             if (FD_ISSET(fd, &read_fds))
             {
                 // 接收新连接
-                if (fd == listenfd)
+                if (fd == tcpListenfd)
                 {
                     sockaddr_in clientAddress;
                     socklen_t clientAddressLength = sizeof(clientAddress);
@@ -154,7 +163,7 @@ int main(int argc, char **argv)
                     if (connfd < 0)
                     {
                         cout << "Error " << errno << ": " << strerror(errno) << ".\n";
-                        close(listenfd);
+                        close(tcpListenfd);
                         break;
                     }
 
@@ -165,10 +174,41 @@ int main(int argc, char **argv)
                     // 构造连接,监听数据
                     channels[connfd] = {connfd, true, false};
                 }
-                // 连接有信息
+                // 收到udp数据报
+                else if (fd == udpListenfd)
+                {
+                    cout << "Trying to receive udp data...\n";
+                    memset(buf, 0, sizeof(buf));
+                    sockaddr_in fromAddress;
+                    socklen_t fromAddressLength = sizeof(fromAddress);
+                    // 使用recvfrom而不是recv，会接受任何udp数据报，并将地址解析到后两个参数
+                    // recv(sockfd,ans,sizeof(ans)-1,0);
+                    int n = recvfrom(fd, buf, sizeof(buf) - 1, 0, (sockaddr *)&fromAddress, &fromAddressLength);
+                    // 打印连接地址
+                    char *fromAddressString = inet_ntoa(fromAddress.sin_addr);
+                    int fromAddressPort = ntohs(fromAddress.sin_port);
+                    cout << "Received UDP datagram from [" << fromAddressString << ":" << fromAddressPort << "]\n";
+                    if (n == -1)
+                    {
+                        cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                    }
+                    else
+                    {
+                        cout << "Rececived message:" << buf << "\n";
+                        char message[128]{0};
+                        snprintf(message, sizeof(message), "%d", addSolution(buf));
+                        size_t messageLength = strlen(message);
+                        int ret = sendto(fd, message, messageLength, 0,(const sockaddr *)&fromAddress, fromAddressLength);
+                        if (ret < 0)
+                        {
+                            cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                        }
+                    }
+                }
+                // 维护的tcp连接有信息
                 else
                 {
-                    cout << "Trying to receive data...\n";
+                    cout << "Trying to receive tcp data...\n";
                     memset(buf, 0, sizeof(buf));
                     ret = recv(fd, buf, sizeof(buf) - 1, 0);
                     cout << "Received " << ret << " bytes.\n";

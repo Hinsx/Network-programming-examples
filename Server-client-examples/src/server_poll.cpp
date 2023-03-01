@@ -6,7 +6,7 @@
 #include <iostream>
 #include <assert.h>
 #include <unistd.h>
-#include<poll.h>
+#include <poll.h>
 #include <vector>
 #include <cmath>
 #include <map>
@@ -52,17 +52,18 @@ int addSolution(char *problem)
     }
     return addition_1 + addition_2;
 }
-//一个fd对应一个Data结构体
-struct Data{
-    using PollfdsIndex=size_t;
+// 一个fd对应一个Data结构体
+struct Data
+{
+    using PollfdsIndex = size_t;
     // 文件描述符对应的pfd在pollfds中的位置
-    PollfdsIndex index=-1;
-    //待发送数据
-    int ans=-1;
+    PollfdsIndex index = -1;
+    // 待发送数据
+    int ans = -1;
 };
 
-using FD=int;
-map<FD, Data>fdToData;
+using FD = int;
+map<FD, Data> fdToData;
 // 保存发生事件的fd
 vector<pollfd> eventPollfds;
 
@@ -72,11 +73,14 @@ int main(int argc, char **argv)
     {
         cout << "usage:" << basename(argv[0]) << " ip_address pot_number.\n";
     }
-    int listenfd = socket(PF_INET, SOCK_STREAM, 0);
-    assert(listenfd >= 0);
+    int tcpListenfd = socket(PF_INET, SOCK_STREAM, 0);
+    assert(tcpListenfd >= 0);
     // 设置地址可重用便于调试
     int reuse = 1;
-    setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    setsockopt(tcpListenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    int udpListenfd = socket(PF_INET, SOCK_DGRAM, 0);
+    assert(udpListenfd >= 0);
 
     const char *ip = argv[1];
     int port = atoi(argv[2]);
@@ -86,21 +90,32 @@ int main(int argc, char **argv)
     serverAddress.sin_port = htons(port);
     inet_pton(AF_INET, ip, &serverAddress.sin_addr);
 
-    int ret = bind(listenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
+    int ret = bind(tcpListenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
     if (ret < 0)
     {
         cout << "Error " << errno << ": " << strerror(errno) << ".\n";
     }
     assert(ret != -1);
 
-    ret = listen(listenfd, 5);
+    ret = bind(udpListenfd, (sockaddr *)&serverAddress, sizeof(serverAddress));
+    if (ret < 0)
+    {
+        cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+    }
     assert(ret != -1);
 
-    fdToData[listenfd] = {0,-1};
+    ret = listen(tcpListenfd, 5);
+    assert(ret != -1);
 
-    vector<pollfd>fds;
+    fdToData[tcpListenfd] = {0, -1};
+    fdToData[udpListenfd] = {1, -1};
+
+    vector<pollfd> fds;
     pollfd pfd;
-    pfd.fd=listenfd;pfd.events=POLLIN;
+    pfd.fd = tcpListenfd;
+    pfd.events = POLLIN;
+    fds.push_back(pfd);
+    pfd.fd = udpListenfd;
     fds.push_back(pfd);
     // 接收信息
     char buf[1024]{0};
@@ -110,8 +125,8 @@ int main(int argc, char **argv)
         // 除非事件发生，否则阻塞
         cout << "Start to poll...\n";
         assert(!fds.empty());
-        //时间负数表阻塞等待
-        ret = poll(&(fds[0]),fds.size(),-1);
+        // 时间负数表阻塞等待
+        ret = poll(&(fds[0]), fds.size(), -1);
         if (ret < 0)
         {
             cout << "poll failure.\n";
@@ -130,11 +145,11 @@ int main(int argc, char **argv)
 
         for (auto &pfd : eventPollfds)
         {
-            int fd=pfd.fd;
+            int fd = pfd.fd;
             if ((pfd.revents & POLLIN))
             {
                 // 接收新连接
-                if (fd == listenfd)
+                if (fd == tcpListenfd)
                 {
                     sockaddr_in clientAddress;
                     socklen_t clientAddressLength = sizeof(clientAddress);
@@ -143,7 +158,7 @@ int main(int argc, char **argv)
                     if (connfd < 0)
                     {
                         cout << "Error " << errno << ": " << strerror(errno) << ".\n";
-                        close(listenfd);
+                        close(tcpListenfd);
                         break;
                     }
 
@@ -153,11 +168,42 @@ int main(int argc, char **argv)
                     cout << "Accept new connection--->[" << clientAddressString << ":" << clientAddressPort << "]\n";
                     // 构造连接,监听数据
                     pollfd tmp;
-                    tmp.fd=connfd;
-                    tmp.events=POLLIN;
+                    tmp.fd = connfd;
+                    tmp.events = POLLIN;
                     fds.push_back(tmp);
-                    assert(fdToData.find(connfd)==fdToData.end());
-                    fdToData[connfd] = {fds.size()-1,-1};
+                    assert(fdToData.find(connfd) == fdToData.end());
+                    fdToData[connfd] = {fds.size() - 1, -1};
+                }
+                // 收到udp数据报
+                else if (fd == udpListenfd)
+                {
+                    cout << "Trying to receive udp data...\n";
+                    memset(buf, 0, sizeof(buf));
+                    sockaddr_in fromAddress;
+                    socklen_t fromAddressLength = sizeof(fromAddress);
+                    // 使用recvfrom而不是recv，会接受任何udp数据报，并将地址解析到后两个参数
+                    // recv(sockfd,ans,sizeof(ans)-1,0);
+                    int n = recvfrom(fd, buf, sizeof(buf) - 1, 0, (sockaddr *)&fromAddress, &fromAddressLength);
+                    // 打印连接地址
+                    char *fromAddressString = inet_ntoa(fromAddress.sin_addr);
+                    int fromAddressPort = ntohs(fromAddress.sin_port);
+                    cout << "Received UDP datagram from [" << fromAddressString << ":" << fromAddressPort << "]\n";
+                    if (n == -1)
+                    {
+                        cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                    }
+                    else
+                    {
+                        cout << "Rececived message:" << buf << "\n";
+                        char message[128]{0};
+                        snprintf(message, sizeof(message), "%d", addSolution(buf));
+                        size_t messageLength = strlen(message);
+                        int ret = sendto(fd, message, messageLength, 0, (const sockaddr *)&fromAddress, fromAddressLength);
+                        if (ret < 0)
+                        {
+                            cout << "Error " << errno << ": " << strerror(errno) << ".\n";
+                        }
+                    }
                 }
                 // 连接有信息
                 else
@@ -175,19 +221,18 @@ int main(int argc, char **argv)
                         cout << "Close connection.\n";
                         close(fd);
 
-                        int newIndex=fdToData[fd].index;
-                        std::swap(fds[newIndex],fds.back());
-                        fdToData[fds[newIndex].fd].index=newIndex;
+                        int newIndex = fdToData[fd].index;
+                        std::swap(fds[newIndex], fds.back());
+                        fdToData[fds[newIndex].fd].index = newIndex;
 
                         fds.pop_back();
                         fdToData.erase(fd);
-                        
                     }
                     else
                     {
                         cout << "Rececived message:" << buf << "\n";
                         fdToData[fd].ans = addSolution(buf);
-                        fds[fdToData[fd].index].events|=POLLOUT;
+                        fds[fdToData[fd].index].events |= POLLOUT;
                     }
                 }
             }
@@ -202,23 +247,23 @@ int main(int argc, char **argv)
                     cout << "Error " << errno << ": " << strerror(errno) << ".\n";
                     close(fd);
 
-                    int newIndex=fdToData[fd].index;
-                    std::swap(fds[newIndex],fds.back());
-                    fdToData[fds[newIndex].fd].index=newIndex;
+                    int newIndex = fdToData[fd].index;
+                    std::swap(fds[newIndex], fds.back());
+                    fdToData[fds[newIndex].fd].index = newIndex;
 
                     fds.pop_back();
                     fdToData.erase(fd);
-                    
+
                     continue;
                 }
 
-                fds[fdToData[fd].index].events&=~POLLOUT;
-
+                fds[fdToData[fd].index].events &= ~POLLOUT;
             }
         }
     }
 
-    for(pollfd &pfd:fds){
+    for (pollfd &pfd : fds)
+    {
         close(pfd.fd);
     }
 }

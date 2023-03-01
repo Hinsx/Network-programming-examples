@@ -9,6 +9,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 add_executable(server_select server_select.cpp)
-add_executable(client client.cpp)
 add_executable(server_poll server_poll.cpp)
 add_executable(server_epoll server_epoll.cpp)
+add_executable(tcp_client tcp_client.cpp)
+add_executable(udp_client udp_client.cpp)
